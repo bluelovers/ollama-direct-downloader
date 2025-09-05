@@ -5,7 +5,13 @@ export default function ResultsCard({ model_name, result, url }: any) {
     // const tempResult = { "schemaVersion": 2, "mediaType": "application/vnd.docker.distribution.manifest.v2+json", "config": { "mediaType": "application/vnd.docker.container.image.v1+json", "digest": "sha256:e18ad7af7efbfaecd8525e356861b84c240ece3a3effeb79d2aa7c0f258f71bd", "size": 487 }, "layers": [{ "mediaType": "application/vnd.ollama.image.model", "digest": "sha256:7462734796d67c40ecec2ca98eddf970e171dbb6b370e43fd633ee75b69abe1b", "size": 1629509152 }, { "mediaType": "application/vnd.ollama.image.template", "digest": "sha256:e0a42594d802e5d31cdc786deb4823edb8adff66094d49de8fffe976d753e348", "size": 358 }, { "mediaType": "application/vnd.ollama.image.license", "digest": "sha256:097a36493f718248845233af1d3fefe7a303f864fae13bc31a3a9704229378ca", "size": 8433 }, { "mediaType": "application/vnd.ollama.image.params", "digest": "sha256:2490e7468436707d5156d7959cf3c6341cc46ee323084cfa3fcf30fe76e397dc", "size": 65 }] }
     const tempResult = JSON.parse(result)
 
-    const BASE_URL = `https://registry.ollama.ai/v2/library/${model_name}/blobs/`
+    const model_fullname_array = model_name.split("/")
+    if (model_fullname_array.length < 2) {
+        model_fullname_array.unshift("library")
+    }
+    const model_image_path = model_fullname_array.join("/")
+
+    const BASE_URL = `https://registry.ollama.ai/v2/${model_image_path}/blobs/`
 
 
     function RowItem({ content, size, onlyName, manifest }: any) {
