@@ -40,6 +40,21 @@ If you need to get the manifest file for a model for your own projects, follow t
 `huihui_ai/deepseek-r1-abliterated:8b` model:
 `https://registry.ollama.ai/v2/huihui_ai/deepseek-r1-abliterated/manifests/8b`
 
+## Downloading from Huggingface
+
+Alternatively we can download `.gguf` files from hugging face and convert them to ollama format with the following command:
+
+```bash
+ollama create myModelName -f Modelfile
+ollama run myModelName
+```
+
+Visit [this link](https://github.com/ollama/ollama/blob/main/docs/modelfile.md) for instructions on creating a Modelfile. Also you can view a Modelfile for an existing model with:
+
+```bash
+ollama show --modelfile llama3.2
+```
+
 ## License
 
 This project is licensed under the MIT License.
