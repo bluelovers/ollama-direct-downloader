@@ -48,12 +48,12 @@ export interface IOllamaManifestsResponse {
   ]
 }
 
-export function getOllamaUrlBase(modelPathID: string) {
-  return `https://registry.ollama.ai/v2/${modelPathID}/` as const
+export function _getOllamaUrlBase(modelPathID: string) {
+  return `https://registry.ollama.ai/v2/${getModelPathID(modelPathID)}/` as const
 }
 
 export function getOllamaBlobsUrlBase(modelPathID: string) {
-  return `${getOllamaUrlBase(modelPathID)}blobs/` as const
+  return `${_getOllamaUrlBase(modelPathID)}blobs/` as const
 }
 
 /**
@@ -77,7 +77,7 @@ export function getOllamaBlobsUrl(modelPathID: string, digest: IOllamaManifestsR
  * @url https://registry.ollama.ai/v2/huihui_ai/qwen3-abliterated/manifests/latest
  */
 export function getOllamaManifestsUrl(modelPathID: string, tag: string) {
-  return `${getOllamaUrlBase(modelPathID)}manifests/${tag}` as const
+  return `${_getOllamaUrlBase(modelPathID)}manifests/${tag}` as const
 }
 
 export function convertDigestToFilename(digest: IOllamaManifestsResponseNodeDigest) {
@@ -97,7 +97,7 @@ export function _getModelPathIDCore(modelPathID: string) {
     ([namespace, modelPathID, ...rest] = modelPathID.split(/[\\/]/));
   }
 
-  return [namespace, modelPathID, ...rest] as const
+  return [namespace, modelPathID, ...(rest ?? [] as string[])] as const
 }
 
 /**
@@ -166,3 +166,4 @@ export function _validateModelParts(modelName: string, tag: string, throwError =
   
   return _validatePart(modelName, 'Model name', throwError) && _validatePart(tag, 'Tag', throwError);
 }
+

@@ -1,21 +1,25 @@
-import { convertDigestToFilename, IOllamaManifestsResponse } from "@/lib/utils-for-api";
+import { _generateCurlCommand } from "@/lib/utils-curl";
+import { 
+    convertDigestToFilename, 
+    getOllamaBlobsUrlBase, 
+    IOllamaManifestsResponse,
+} from "@/lib/utils-for-api";
+import { humanFileSize } from "@/lib/utils-page";
 import Link from "next/link";
 import { toast } from "sonner";
 
 export default function ResultsCard({ model_name, result, url }: any) {
     // const tempResult = { "schemaVersion": 2, "mediaType": "application/vnd.docker.distribution.manifest.v2+json", "config": { "mediaType": "application/vnd.docker.container.image.v1+json", "digest": "sha256:e18ad7af7efbfaecd8525e356861b84c240ece3a3effeb79d2aa7c0f258f71bd", "size": 487 }, "layers": [{ "mediaType": "application/vnd.ollama.image.model", "digest": "sha256:7462734796d67c40ecec2ca98eddf970e171dbb6b370e43fd633ee75b69abe1b", "size": 1629509152 }, { "mediaType": "application/vnd.ollama.image.template", "digest": "sha256:e0a42594d802e5d31cdc786deb4823edb8adff66094d49de8fffe976d753e348", "size": 358 }, { "mediaType": "application/vnd.ollama.image.license", "digest": "sha256:097a36493f718248845233af1d3fefe7a303f864fae13bc31a3a9704229378ca", "size": 8433 }, { "mediaType": "application/vnd.ollama.image.params", "digest": "sha256:2490e7468436707d5156d7959cf3c6341cc46ee323084cfa3fcf30fe76e397dc", "size": 65 }] }
-    const tempResult = JSON.parse(result) as IOllamaManifestsResponse
+    const tempResult = JSON.parse(result) as IOllamaManifestsResponse;
 
-    const model_fullname_array = model_name.split("/")
-    if (model_fullname_array.length < 2) {
-        model_fullname_array.unshift("library")
-    }
-    const model_image_path = model_fullname_array.join("/")
+    const BASE_URL = getOllamaBlobsUrlBase(model_name);
 
-    const BASE_URL = `https://registry.ollama.ai/v2/${model_image_path}/blobs/`
-
-
-    function RowItem({ content, size, onlyName, manifest }: any) {
+    function RowItem({ content, size, onlyName, manifest }: {
+        content: any;
+        size?: any;
+        onlyName?: any;
+        manifest?: any;
+    }) {
         return (
             <div className="flex flex-col gap-2 hover:bg-black/10 dark:hover:bg-white/5 rounded-lg p-2 cursor-pointer">
                 <div className="flex items-center gap-2">
@@ -27,7 +31,7 @@ export default function ResultsCard({ model_name, result, url }: any) {
                     }
                     <span className="text-sm">
                         {!onlyName && !manifest &&
-                            <Link href={BASE_URL + content} download={content}>{BASE_URL + content}</Link>
+                            <Link href={BASE_URL + content} download={content} target='_blank'>{BASE_URL + content}</Link>
                         }
 
                         {onlyName && !manifest &&
@@ -35,37 +39,13 @@ export default function ResultsCard({ model_name, result, url }: any) {
                         }
 
                         {manifest &&
-                            <Link href={url} download={content}>{content}</Link>
+                            <Link href={url} download={content} target='_blank'>{content}</Link>
                         }
                     </span>
                 </div>
 
             </div>
         )
-    }
-
-    function humanFileSize(bytes: number, si: boolean = false, dp: number = 1) {
-        const thresh = si ? 1000 : 1024;
-
-        if (Math.abs(bytes) < thresh) {
-            return bytes + ' B';
-        }
-
-        const units = si
-            ? ['kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
-            : ['KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-        let u = -1;
-        const r = 10 ** dp;
-
-        do {
-            bytes /= thresh;
-            ++u;
-        } while (
-            Math.round(Math.abs(bytes) * r) / r >= thresh &&
-            u < units.length - 1
-        );
-
-        return bytes.toFixed(dp) + ' ' + units[u];
     }
 
     function generateBlobsCurlCommand() {
@@ -78,7 +58,7 @@ export default function ResultsCard({ model_name, result, url }: any) {
         // Build the curl commands
         const cmds = digests.map(digest => {
             const filename = convertDigestToFilename(digest);
-            return `curl -L "${BASE_URL}${digest}" -o "${filename}"`;
+            return _generateCurlCommand(`${BASE_URL}${digest}`, filename);
         });
 
         return cmds.join("\n");
@@ -86,9 +66,9 @@ export default function ResultsCard({ model_name, result, url }: any) {
 
     function generateManifestCurlCommand() {
         const filename = url.split("/").pop();
-        return `curl -L "${url}" -o "${filename}"`;
-
+        return _generateCurlCommand(url, filename);
     }
+
     return (
         <div className="flex flex-col items-start gap-2">
 
