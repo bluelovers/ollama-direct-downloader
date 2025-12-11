@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from 'react'
-import { Github } from 'lucide-react'
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ModeToggle } from "@/components/mode-toggle"
@@ -12,81 +12,54 @@ import Link from 'next/link'
 import { useTheme } from 'next-themes'
 import { useSearchParams } from 'next/navigation'
 import GitHubButton from 'react-github-btn'
+import { getOllamaManifestsUrl } from '@/lib/utils-for-api'
 
 export default function Home() {
   const searchParams = useSearchParams()
   const [textInput, setTextInput] = useState('')
   const [hasAutoSearched, setHasAutoSearched] = useState(false)
-  const [url, setUrl] = useState('')
+  const [url, setUrl] = useState<ReturnType<typeof getOllamaManifestsUrl> | ''>('')
   const [result, setResult] = useState('')
   const [loading, setLoading] = useState(false)
   const [modelName, setmodelName] = useState('')
+  const [error, setError] = useState('')
+  const [modelTag, setModelTag] = useState('')
+  const [lastQuery, setLastQuery] = useState('')
+  const [originalError, setOriginalError] = useState('')
+
   const { theme } = useTheme()
   const [imgSrc, setImgSrc] = useState("/favicon_dark.png"); // default
 
-  // Generate manifest path based on model name
-  const getManifestPath = (modelName: string) => {
-    if (modelName.includes('/')) {
-      const [namespace, model] = modelName.split('/');
-      return `$OLLAMA_MODELS\\manifests\\registry.ollama.ai\\${namespace}\\${model}`;
-    } else {
-      return `$OLLAMA_MODELS\\manifests\\registry.ollama.ai\\library\\${modelName}`;
-    }
-  }
-
-  useEffect(() => {
-    if (theme === "light") {
-      setImgSrc("/favicon.png");
-    } else if (theme === "dark") {
-      setImgSrc("/favicon_dark.png");
-    }
-  }, [theme]); // runs every time `theme` changes
-
-  const handleSearch = async (e: React.FormEvent, customInput?: string) => {
-    e.preventDefault();
-    // empty the result
-    setResult('');
-    setLoading(true);
-    setUrl('');
-
-    // trim the input (use customInput if provided, otherwise use textInput)
-    const trimmedInput = customInput ? customInput.trim() : textInput.trim();
-
-    // check if the input is empty
-    if (!trimmedInput) {
-      toast.error('Model name is required')
-      return;
-    }
-
-    // Parse different input formats
-    let model_name: string;
-    let tag: string;
-    let modelTag: string;
+  // 解析和驗證模型輸入
+  function parseModelInput(input: string) {
+    // 解析不同的輸入格式
+    let modelTag = input
     
-    if (trimmedInput.startsWith('ollama pull ') || trimmedInput.startsWith('ollama run ')) {
-      const commandParts = trimmedInput.split(/\s+/);
-      modelTag = commandParts.slice(2).join(' ').trim(); // Join the rest in case model name has spaces
+    if (input.startsWith('ollama pull ') || input.startsWith('ollama run ')) {
+      const commandParts = input.split(/\s+/);
+      modelTag = commandParts.slice(2).join(' ').trim();
       
       if (!modelTag) {
-        toast.error(`Model name is required after '${commandParts[0]} ${commandParts[1]}'`)
-        return;
+        throw new Error(`Model name is required after '${commandParts[0]} ${commandParts[1]}'`)
       }
-    } else {
-      modelTag = trimmedInput;
     }
     
-    // Split only once to get model and tag
+    // 分割獲取模型和標籤
     const modelSplit = modelTag.split(/\s*:\s*/);
-    model_name = modelSplit[0].trim();
-    tag = modelSplit.length === 2 ? modelSplit[1].trim() : 'latest';
+    const modelName = modelSplit[0].trim();
+    const tag = modelSplit.length === 2 ? modelSplit[1].trim() : 'latest';
     
     if (modelSplit.length > 2) {
-      toast.error('Use the format "model:tag", "model:latest" if unsure, or "ollama pull/run model[:tag]"')
-      return;
+      throw new Error('Use the format "model:tag", "model:latest" if unsure, or "ollama pull/run model[:tag]"')
     }
     
-    // Validate model name and tag format
+    return { modelName, tag, modelTag }
+  }
+
+  // 驗證模型名稱和標籤
+  function validateModelParts(modelName: string, tag: string) {
     const validChars = /^[a-zA-Z0-9\-_\.]+$/;
+    
     const validatePart = (part: string, name: string) => {
       if (!part) {
         toast.error(`${name} cannot be empty`)
@@ -98,33 +71,85 @@ export default function Home() {
       return true;
     };
     
-    if (model_name.includes('/')) {
-      const parts = model_name.split('/');
+    if (modelName.includes('/')) {
+      const parts = modelName.split('/');
       if (parts.length !== 2 || !parts[0] || !parts[1]) {
         toast.error('User namespace must be in format "namespace/model"')
-        return;
+        return false;
       }
-      if (!validatePart(parts[0], 'Namespace') || !validatePart(parts[1], 'Model name')) return;
-    } else if (!validatePart(model_name, 'Model name')) {
+      return validatePart(parts[0], 'Namespace') && validatePart(parts[1], 'Model name');
+    }
+    
+    return validatePart(modelName, 'Model name') && validatePart(tag, 'Tag');
+  }
+
+  // 生成路徑和URL
+  const getManifestPath = (modelTag: string) => {
+    if (modelTag.includes('/')) {
+      const [namespace, model] = modelTag.split('/');
+      return `$OLLAMA_MODELS\\manifests\\registry.ollama.ai\\${namespace}\\${model}`;
+    } else {
+      return `$OLLAMA_MODELS\\manifests\\registry.ollama.ai\\library\\${modelTag}`;
+    }
+  }
+
+  const getOllamaUrl = (modelTag: string) => {
+    if (modelTag.includes('/')) {
+      return `https://ollama.com/${modelTag}`;
+    } else {
+      return `https://ollama.com/library/${modelTag}`;
+    }
+  }
+
+  useEffect(() => {
+    if (theme === "light") {
+      setImgSrc("/favicon.png");
+    } else if (theme === "dark") {
+      setImgSrc("/favicon_dark.png");
+    }
+  }, [theme]); // runs every time `theme` changes
+
+  const handleSearch = async (e: React.FormEvent<HTMLFormElement>, customInput?: string) => {
+    e.preventDefault();
+    
+    const trimmedInput = (customInput || textInput).trim();
+
+    if (!trimmedInput) {
+      toast.error('Model name is required')
       return;
     }
     
-    // Validate input
-    if (!validatePart(tag, 'Tag')) {
+    const { modelName, tag, modelTag } = parseModelInput(trimmedInput)
+    
+    // Check if this query is the same as the last query
+    const lastQueryWasSuccessful = modelName === lastQuery && result && !error;
+    if (lastQueryWasSuccessful) {
+      toast.info('You have already searched for this model successfully')
+      return;
+    }
+    
+    const isRetryOfFailedQuery = modelName === lastQuery && error && !result;
+    if (isRetryOfFailedQuery) {
+      toast.warning('Retrying the same model that failed previously')
+    }
+    
+    // Validate model name and tag
+    if (!validateModelParts(modelName, tag)) {
       return;
     }
 
+    // Clear results and set loading state
+    setResult('');
+    setError('');
+    setOriginalError('');
     setLoading(true);
+    setUrl('');
+    setmodelName(modelName);
+    setModelTag(modelName.includes('/') ? modelName : `${modelName}:latest`);
 
-    setmodelName(model_name);
-
-    // Fix for user models that are not in the 'library/' dir
-    const basePath = model_name.includes('/')
-    ? model_name               // user-namespaced model
-    : `library/${model_name}`; // public library model
-
-    // Build the manifest url
-    const url = `https://registry.ollama.ai/v2/${basePath}/manifests/${tag}`
+    // Build the manifest URL
+    const basePath = modelName.includes('/') ? modelName : `library/${modelName}`;
+    const url = getOllamaManifestsUrl(basePath, tag)
     setUrl(url);
 
     // Save the model name to upstash db (only if UPSTASH_REDIS_REST_URL is configured)
@@ -152,17 +177,56 @@ export default function Home() {
         body: JSON.stringify({ url }),
       })
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch data')
+      const responseText = await response.text()
+      const responseData = JSON.parse(responseText)
+      
+      // Check if it's an error response from our proxy API
+      if (responseData.error) {
+        throw responseData
       }
-
-      // Model links returned from ollama
-      const data = await response.text()
-      setResult(data)
+      
+      // Valid successful response
+      setResult(responseText) // Store the raw response text
+      setError('')
+      setOriginalError('')
 
     } catch (error) {
-      toast.error('Error fetching data: Wrong model name?')
+      console.error('API Error:', error)
+      
+      // Handle both network errors and structured error responses
+      let errorData: any
+      let userMessage = 'Failed to fetch model data. Please try again later.'
+      let errorDetails = ''
+      
+      if (error instanceof Error) {
+        userMessage = error.message
+        // Network or fetch errors won't have our structured format
+      } else if (typeof error === 'object' && error.error) {
+        // Structured error response from proxy API
+        errorData = error
+        userMessage = errorData.error
+        errorDetails = errorData.originalMessage || ''
+      }
+      
+      // Add retry context if this is a retry of a failed query
+      if (isRetryOfFailedQuery) {
+        userMessage = `Retry Attempt: ${userMessage}`
+      }
+      
+      // Store both error message and details for display
+      setError(userMessage)
+      setOriginalError(errorDetails)
+      toast.error(userMessage, {
+        duration: 6000,
+        style: {
+          background: '#ef4444',
+          color: '#ffffff',
+          border: '1px solid #dc2626',
+        }
+      })
     } finally {
+      // Record the query regardless of success or failure
+      setLastQuery(modelName)
       setLoading(false)
     }
   }
@@ -179,7 +243,7 @@ export default function Home() {
         
         // Auto-trigger search with the decoded param directly
         const timer = setTimeout(() => {
-          handleSearch({ preventDefault: () => {} } as React.FormEvent, decodedParam)
+          handleSearch({ preventDefault: () => {} } as React.FormEvent<HTMLFormElement>, decodedParam)
         }, 100)
         
         return () => clearTimeout(timer)
@@ -257,6 +321,18 @@ export default function Home() {
             </div>
           </form>
 
+          {/* Model Link */}
+          {modelTag && (
+            <div className='p-3 border rounded-lg bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-600'>
+              <p className='text-sm'>
+                <span className='text-slate-700 dark:text-slate-300'>Model Page:</span> 
+                <a href={getOllamaUrl(modelTag)} target='_blank' rel='noopener noreferrer' className='text-cyan-500 underline ml-2'>
+                  {getOllamaUrl(modelTag)}
+                </a>
+              </p>
+            </div>
+          )}
+
           {!loading && !result &&
             <div className='text-slate-600 text-sm w-full flex justify-center items-center'>
               Enter the name of the model you want to download and press enter
@@ -276,6 +352,29 @@ export default function Home() {
 
           )}
 
+          {/* Show error message */}
+          {!loading && error && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-start gap-2">
+                <div className="text-red-500">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-red-800 font-medium mb-2">Error Loading Model</h3>
+                  <p className="text-red-700 text-sm whitespace-pre-line">{error}</p>
+                  {originalError && (
+                    <div className="mt-3 p-3 bg-red-100 border border-red-300 rounded">
+                      <h4 className="text-red-800 font-medium text-sm mb-1">Original Error Details:</h4>
+                      <p className="text-red-600 text-sm font-mono">{originalError}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Show result after loading */}
           {!loading && result && (
             <>
@@ -285,11 +384,10 @@ export default function Home() {
 
               <ResultsCard model_name={modelName} result={result} url={url} />
 
-
               <div className='text-slate-600 text-sm'>
                 Help:
                 <br />
-                Download the Manifest file and place it in a folder like <code className='dark:bg-slate-900 dark:text-slate-600 bg-blue-200 text-slate-600'>{getManifestPath(modelName)}</code>
+                Download the Manifest file and place it in a folder like <code className='dark:bg-slate-900 dark:text-slate-600 bg-blue-200 text-slate-600'>{getManifestPath(modelTag)}</code>
                 <br />
                 <br />
                 Download the blobs and place them in a folder like <code className='dark:bg-slate-900 dark:text-slate-600 bg-blue-200'>$OLLAMA_MODELS\blobs</code>
