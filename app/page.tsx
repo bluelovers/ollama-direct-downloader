@@ -12,7 +12,13 @@ import Link from 'next/link'
 import { useTheme } from 'next-themes'
 import { useSearchParams } from 'next/navigation'
 import GitHubButton from 'react-github-btn'
-import { getOllamaManifestsUrl } from '@/lib/utils-for-api'
+import { 
+  _getModelPathIDCore,
+  _validateModelParts,
+  getManifestFolderPath, 
+  getOllamaManifestsUrl,
+  getOllamaModelPageUrl,
+} from '@/lib/utils-for-api'
 
 export default function Home() {
   const searchParams = useSearchParams()
@@ -56,49 +62,18 @@ export default function Home() {
     return { modelName, tag, modelTag }
   }
 
-  // 驗證模型名稱和標籤
   function validateModelParts(modelName: string, tag: string) {
-    const validChars = /^[a-zA-Z0-9\-_\.]+$/;
-    
-    const validatePart = (part: string, name: string) => {
-      if (!part) {
-        toast.error(`${name} cannot be empty`)
-        return false;
-      } else if (!validChars.test(part)) {
-        toast.error(`${name} can only contain letters, numbers, _, -, and .`)
-        return false;
-      }
-      return true;
-    };
-    
-    if (modelName.includes('/')) {
-      const parts = modelName.split('/');
-      if (parts.length !== 2 || !parts[0] || !parts[1]) {
-        toast.error('User namespace must be in format "namespace/model"')
-        return false;
-      }
-      return validatePart(parts[0], 'Namespace') && validatePart(parts[1], 'Model name');
+    try {
+      return _validateModelParts(modelName, tag, true);
+    } catch (error) {
+      toast.error((error as Error).message)
+      
+      setResult('');
+      setError((error as Error).message);
+      setOriginalError('');
     }
     
-    return validatePart(modelName, 'Model name') && validatePart(tag, 'Tag');
-  }
-
-  // 生成路徑和URL
-  const getManifestPath = (modelTag: string) => {
-    if (modelTag.includes('/')) {
-      const [namespace, model] = modelTag.split('/');
-      return `$OLLAMA_MODELS\\manifests\\registry.ollama.ai\\${namespace}\\${model}`;
-    } else {
-      return `$OLLAMA_MODELS\\manifests\\registry.ollama.ai\\library\\${modelTag}`;
-    }
-  }
-
-  const getOllamaUrl = (modelTag: string) => {
-    if (modelTag.includes('/')) {
-      return `https://ollama.com/${modelTag}`;
-    } else {
-      return `https://ollama.com/library/${modelTag}`;
-    }
+    return false;
   }
 
   useEffect(() => {
@@ -263,6 +238,7 @@ export default function Home() {
     }
   }, []);
 
+  const isSuccessful = !!result && !error;
 
   return (
     <div className="min-h-screen bg-background">
@@ -326,14 +302,14 @@ export default function Home() {
             <div className='p-3 border rounded-lg bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-600'>
               <p className='text-sm'>
                 <span className='text-slate-700 dark:text-slate-300'>Model Page:</span> 
-                <a href={getOllamaUrl(modelTag)} target='_blank' rel='noopener noreferrer' className='text-cyan-500 underline ml-2'>
-                  {getOllamaUrl(modelTag)}
+                <a href={getOllamaModelPageUrl(modelTag)} target='_blank' rel='noopener noreferrer' className='text-cyan-500 underline ml-2'>
+                  {getOllamaModelPageUrl(modelTag)}
                 </a>
               </p>
             </div>
           )}
 
-          {!loading && !result &&
+          {!loading && !isSuccessful &&
             <div className='text-slate-600 text-sm w-full flex justify-center items-center'>
               Enter the name of the model you want to download and press enter
             </div>
@@ -353,7 +329,7 @@ export default function Home() {
           )}
 
           {/* Show error message */}
-          {!loading && error && (
+          {!loading && !isSuccessful && (
             <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
               <div className="flex items-start gap-2">
                 <div className="text-red-500">
@@ -376,7 +352,7 @@ export default function Home() {
           )}
 
           {/* Show result after loading */}
-          {!loading && result && (
+          {!loading && isSuccessful && (
             <>
               <div className='text-slate-600 text-sm w-full flex justify-center items-center'>
                 Please give <a href='https://github.com/Gholamrezadar/ollama-direct-downloader' className='text-cyan-500 underline mx-1'> this repo </a> a star if it helped you &lt;3
@@ -387,7 +363,7 @@ export default function Home() {
               <div className='text-slate-600 text-sm'>
                 Help:
                 <br />
-                Download the Manifest file and place it in a folder like <code className='dark:bg-slate-900 dark:text-slate-600 bg-blue-200 text-slate-600'>{getManifestPath(modelTag)}</code>
+                Download the Manifest file and place it in a folder like <code className='dark:bg-slate-900 dark:text-slate-600 bg-blue-200 text-slate-600'>{getManifestFolderPath(modelTag)}</code>
                 <br />
                 <br />
                 Download the blobs and place them in a folder like <code className='dark:bg-slate-900 dark:text-slate-600 bg-blue-200'>$OLLAMA_MODELS\blobs</code>
