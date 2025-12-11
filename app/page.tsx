@@ -10,16 +10,29 @@ import { Toaster } from '@/components/ui/sonner'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { useTheme } from 'next-themes'
+import { useSearchParams } from 'next/navigation'
 import GitHubButton from 'react-github-btn'
 
 export default function Home() {
+  const searchParams = useSearchParams()
   const [textInput, setTextInput] = useState('')
+  const [hasAutoSearched, setHasAutoSearched] = useState(false)
   const [url, setUrl] = useState('')
   const [result, setResult] = useState('')
   const [loading, setLoading] = useState(false)
   const [modelName, setmodelName] = useState('')
   const { theme } = useTheme()
   const [imgSrc, setImgSrc] = useState("/favicon_dark.png"); // default
+
+  // Generate manifest path based on model name
+  const getManifestPath = (modelName: string) => {
+    if (modelName.includes('/')) {
+      const [namespace, model] = modelName.split('/');
+      return `$OLLAMA_MODELS\\manifests\\registry.ollama.ai\\${namespace}\\${model}`;
+    } else {
+      return `$OLLAMA_MODELS\\manifests\\registry.ollama.ai\\library\\${modelName}`;
+    }
+  }
 
   useEffect(() => {
     if (theme === "light") {
@@ -29,15 +42,15 @@ export default function Home() {
     }
   }, [theme]); // runs every time `theme` changes
 
-  const handleSearch = async (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent, customInput?: string) => {
     e.preventDefault();
     // empty the result
     setResult('');
-    setLoading(false);
+    setLoading(true);
     setUrl('');
 
-    // trim the input
-    const trimmedInput = textInput.trim();
+    // trim the input (use customInput if provided, otherwise use textInput)
+    const trimmedInput = customInput ? customInput.trim() : textInput.trim();
 
     // check if the input is empty
     if (!trimmedInput) {
@@ -102,6 +115,7 @@ export default function Home() {
     }
 
     setLoading(true);
+
     setmodelName(model_name);
 
     // Fix for user models that are not in the 'library/' dir
@@ -113,16 +127,18 @@ export default function Home() {
     const url = `https://registry.ollama.ai/v2/${basePath}/manifests/${tag}`
     setUrl(url);
 
-    // Save the model name to upstash db
-    try {
-      await fetch('/api/save-query', {
-        method: 'POST',
-        body: JSON.stringify({ query: textInput }),
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-    catch{
-      console.log("failed to save model name to db!")
+    // Save the model name to upstash db (only if UPSTASH_REDIS_REST_URL is configured)
+    if (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_UPSTASH_REDIS_REST_URL) {
+      try {
+        await fetch('/api/save-query', {
+          method: 'POST',
+          body: JSON.stringify({ query: textInput }),
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      catch{
+        // Silently fail if Redis is not available
+      }
     }
 
 
@@ -151,13 +167,36 @@ export default function Home() {
     }
   }
 
-  // Increment views in upstash db
+    // Get model from URL parameter on component mount and trigger search if valid
   useEffect(() => {
-    fetch('/api/page-load', {
-      method: 'POST',
-      body: null,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const modelParam = searchParams.get('model')
+    if (modelParam && !hasAutoSearched) {
+      const decodedParam = decodeURIComponent(modelParam).trim()
+
+      if (decodedParam) {
+        setTextInput(decodedParam)
+        setHasAutoSearched(true)
+        
+        // Auto-trigger search with the decoded param directly
+        const timer = setTimeout(() => {
+          handleSearch({ preventDefault: () => {} } as React.FormEvent, decodedParam)
+        }, 100)
+        
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [searchParams])
+
+  // Increment views in upstash db (only if UPSTASH_REDIS_REST_URL is configured)
+  useEffect(() => {
+    // Only call page-load API when Redis is configured
+    if (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_UPSTASH_REDIS_REST_URL) {
+      fetch('/api/page-load', {
+        method: 'POST',
+        body: null,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
   }, []);
 
 
@@ -250,7 +289,7 @@ export default function Home() {
               <div className='text-slate-600 text-sm'>
                 Help:
                 <br />
-                Download the Manifest file and place it in a folder like <code className='dark:bg-slate-900 dark:text-slate-600 bg-blue-200 text-slate-600'>$OLLAMA_MODELS\manifests\registry.ollama.ai\library\gemma2</code>
+                Download the Manifest file and place it in a folder like <code className='dark:bg-slate-900 dark:text-slate-600 bg-blue-200 text-slate-600'>{getManifestPath(modelName)}</code>
                 <br />
                 <br />
                 Download the blobs and place them in a folder like <code className='dark:bg-slate-900 dark:text-slate-600 bg-blue-200'>$OLLAMA_MODELS\blobs</code>
