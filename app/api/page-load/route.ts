@@ -1,7 +1,7 @@
 import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
 
-export const POST = async (req: Request) => {
+export const POST = async () => {
   // Check if Redis is configured
   if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
     return NextResponse.json({ success: false, message: 'Redis not configured' });
