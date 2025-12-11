@@ -33,7 +33,7 @@ export default function Home() {
     e.preventDefault();
     // empty the result
     setResult('');
-    setLoading(true);
+    setLoading(false);
     setUrl('');
 
     // trim the input
@@ -42,26 +42,67 @@ export default function Home() {
     // check if the input is empty
     if (!trimmedInput) {
       toast.error('Model name is required')
-      setLoading(false);
       return;
     }
 
-    // convert input to url
-    const inputSplit = textInput.trim().split(':');
+    // Parse different input formats
+    let model_name: string;
+    let tag: string;
+    let modelTag: string;
     
-    // check if input is valid
-    if (inputSplit.length !== 2) {
-      toast.error('Use the format "model:tag" or "model:latest" if unsure')
-      setLoading(false);
+    if (trimmedInput.startsWith('ollama pull ') || trimmedInput.startsWith('ollama run ')) {
+      const commandParts = trimmedInput.split(/\s+/);
+      modelTag = commandParts.slice(2).join(' ').trim(); // Join the rest in case model name has spaces
+      
+      if (!modelTag) {
+        toast.error(`Model name is required after '${commandParts[0]} ${commandParts[1]}'`)
+        return;
+      }
+    } else {
+      modelTag = trimmedInput;
+    }
+    
+    // Split only once to get model and tag
+    const modelSplit = modelTag.split(/\s*:\s*/);
+    model_name = modelSplit[0].trim();
+    tag = modelSplit.length === 2 ? modelSplit[1].trim() : 'latest';
+    
+    if (modelSplit.length > 2) {
+      toast.error('Use the format "model:tag", "model:latest" if unsure, or "ollama pull/run model[:tag]"')
+      return;
+    }
+    
+    // Validate model name and tag format
+    const validChars = /^[a-zA-Z0-9\-_\.]+$/;
+    const validatePart = (part: string, name: string) => {
+      if (!part) {
+        toast.error(`${name} cannot be empty`)
+        return false;
+      } else if (!validChars.test(part)) {
+        toast.error(`${name} can only contain letters, numbers, _, -, and .`)
+        return false;
+      }
+      return true;
+    };
+    
+    if (model_name.includes('/')) {
+      const parts = model_name.split('/');
+      if (parts.length !== 2 || !parts[0] || !parts[1]) {
+        toast.error('User namespace must be in format "namespace/model"')
+        return;
+      }
+      if (!validatePart(parts[0], 'Namespace') || !validatePart(parts[1], 'Model name')) return;
+    } else if (!validatePart(model_name, 'Model name')) {
+      return;
+    }
+    
+    // Validate input
+    if (!validatePart(tag, 'Tag')) {
       return;
     }
 
-    // Get model name from input
-    const model_name = inputSplit[0];
+    setLoading(true);
     setmodelName(model_name);
-
-    // Get tag from input
-    const tag = inputSplit[1];
 
     // Fix for user models that are not in the 'library/' dir
     const basePath = model_name.includes('/')
@@ -70,9 +111,7 @@ export default function Home() {
 
     // Build the manifest url
     const url = `https://registry.ollama.ai/v2/${basePath}/manifests/${tag}`
-    setUrl(url)
-
-    setLoading(true)
+    setUrl(url);
 
     // Save the model name to upstash db
     try {
